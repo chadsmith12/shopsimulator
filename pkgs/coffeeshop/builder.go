@@ -50,7 +50,8 @@ func (b *CoffeeShopBuilder) Build() *CoffeShop {
     return &CoffeShop{
     	hoursOpened:        b.hoursOpened,
     	dayLength:          b.dayLength,
-    	customerQueue:      customers.Start(),
+    	line:               customers.Start(),
+    	customerOrderCh:    make(chan customers.Customer),
     	closedCh:           make(chan struct{}),
     	newCustomerCh:      make(chan struct{}),
     	isOpen:             false,

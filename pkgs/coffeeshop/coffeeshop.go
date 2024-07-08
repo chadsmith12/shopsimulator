@@ -13,7 +13,8 @@ import (
 type CoffeShop struct {
     hoursOpened time.Duration
     dayLength simulation.SimulatedDay
-    customerQueue *customers.CustomerQueue
+    line *customers.CustomerQueue
+    customerOrderCh chan customers.Customer
     closedCh chan struct{}
     newCustomerCh chan struct{}
     isOpen bool
@@ -28,9 +29,10 @@ func New(hoursOpened time.Duration, dayLength simulation.SimulatedDay) *CoffeSho
     return &CoffeShop{
     	hoursOpened:        hoursOpened,
         dayLength:          dayLength,
-    	customerQueue:      customers.Start(),
+    	line:      customers.Start(),
     	closedCh:           make(chan struct{}),
         newCustomerCh:      make(chan struct{}),
+        customerOrderCh:    make(chan customers.Customer),
         isOpen:             false,
         customersWaitGroup: sync.WaitGroup{},
         baristas: baristas,
@@ -53,7 +55,16 @@ func (cs *CoffeShop) Open() {
     }()
 
     for _, barista := range cs.baristas {
-        go barista.Work(&cs.customersWaitGroup, cs.newCustomerCh, cs.closedCh, cs.customerQueue)
+        go barista.Work(&cs.customersWaitGroup, cs.newCustomerCh, cs.closedCh, cs.customerOrderCh, cs.line)
+    }
+    
+    for i := 0; i < 3; i++ {
+        go func() {
+            for range cs.customerOrderCh {
+                time.Sleep(cs.dayLength.Minute() * 3)
+                cs.customersWaitGroup.Done()
+            }
+        }()
     }
 }
 
@@ -80,7 +91,7 @@ func (cs *CoffeShop) AcceptCustomer(customer customers.Customer) {
     select {
     case <-cs.closedCh: break
     default: 
-        cs.customerQueue.Add(customer)
+        cs.line.Add(customer)
         cs.customersWaitGroup.Add(1)
         go cs.notify() 
     }
@@ -103,13 +114,13 @@ func (cs *CoffeShop) notify() {
 
 // this will process all the remaining customers that are in line
 func (cs *CoffeShop) processRemainingCustomers(barista *worker.Worker) {
-    for cs.customerQueue.Len() > 0 {
+    for cs.line.Len() > 0 {
         cs.processNextCustomer(barista)   
     }
 }
 
 func (cs *CoffeShop) processNextCustomer(barista *worker.Worker) {
-    customer, _ := cs.customerQueue.Remove()
+    customer, _ := cs.line.Remove()
     barista.ProcessCustomer(customer)
     cs.customersWaitGroup.Done()
 }
